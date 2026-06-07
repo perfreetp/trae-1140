@@ -48,6 +48,7 @@ export interface Requisition {
   reqNo: string
   workOrderId: string
   applicant: string
+  warehouseId: string
   status: 'pending' | 'approved' | 'rejected' | 'shipped'
   urgent: boolean
   needsApproval: boolean

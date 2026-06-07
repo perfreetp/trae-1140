@@ -27,18 +27,10 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: 'shipped', label: '已出库' },
 ]
 
-const statusLabels: Record<string, string> = {
-  all: '全部',
-  pending: '待审批',
-  approved: '已批准',
-  rejected: '已驳回',
-  shipped: '已出库',
-}
-
 export default function RequisitionPage() {
   const location = useLocation()
   const navState = (location.state as NavState) || {}
-  const { requisitions, workOrders, spareParts, addRequisition, updateRequisitionStatus, getPartById, getWorkOrderById, getPartTotalStock } = useStore()
+  const { requisitions, workOrders, spareParts, warehouses, addRequisition, updateRequisitionStatus, getPartById, getWorkOrderById, getPartTotalStock, getWarehouseById } = useStore()
 
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [createOpen, setCreateOpen] = useState(false)
@@ -48,6 +40,7 @@ export default function RequisitionPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [newWorkOrderId, setNewWorkOrderId] = useState('')
   const [newApplicant, setNewApplicant] = useState('')
+  const [newWarehouseId, setNewWarehouseId] = useState('')
   const [newUrgent, setNewUrgent] = useState(false)
   const [newItems, setNewItems] = useState<{ partId: string; quantity: number }[]>([])
   const [partSearch, setPartSearch] = useState('')
@@ -57,6 +50,7 @@ export default function RequisitionPage() {
     if (navState.workOrderId || navState.prefillPartId) {
       setNewWorkOrderId(navState.workOrderId || '')
       setNewApplicant(navState.applicant || '')
+      setNewWarehouseId(navState.prefillWarehouseId || '')
       setNewUrgent(navState.urgent || false)
       if (navState.partIds) {
         setNewItems(navState.partIds.map((pid) => ({ partId: pid, quantity: 1 })))
@@ -100,22 +94,20 @@ export default function RequisitionPage() {
   }
 
   const handleCreate = () => {
-    const items: RequisitionItem[] = newItems.map((it, i) => {
-      const part = spareParts.find((p) => p.id === it.partId)
-      return {
-        id: `ri_new_${Date.now()}_${i}`,
-        partId: it.partId,
-        quantity: it.quantity,
-        substituted: false,
-        originalPartId: '',
-      }
-    })
+    const items: RequisitionItem[] = newItems.map((it, i) => ({
+      id: `ri_new_${Date.now()}_${i}`,
+      partId: it.partId,
+      quantity: it.quantity,
+      substituted: false,
+      originalPartId: '',
+    }))
     const hasHighValue = items.some((it) => spareParts.find((p) => p.id === it.partId)?.highValue)
     const req: Requisition = {
       id: `req_new_${Date.now()}`,
       reqNo: `REQ-2026-${String(requisitions.length + 1).padStart(4, '0')}`,
       workOrderId: newWorkOrderId,
       applicant: newApplicant,
+      warehouseId: newWarehouseId,
       status: 'pending',
       urgent: newUrgent,
       needsApproval: hasHighValue,
@@ -126,11 +118,17 @@ export default function RequisitionPage() {
     addRequisition(req)
     setCreateOpen(false)
     resetCreateForm()
+    setActiveTab('all')
+    setTimeout(() => {
+      setSelected(req)
+      setDetailOpen(true)
+    }, 100)
   }
 
   const resetCreateForm = () => {
     setNewWorkOrderId('')
     setNewApplicant('')
+    setNewWarehouseId('')
     setNewUrgent(false)
     setNewItems([])
     setPartSearch('')
@@ -181,6 +179,7 @@ export default function RequisitionPage() {
               <th className="text-left py-3 px-3 font-medium">申领单号</th>
               <th className="text-left py-3 px-3 font-medium">关联工单</th>
               <th className="text-left py-3 px-3 font-medium">申请人</th>
+              <th className="text-left py-3 px-3 font-medium">仓库</th>
               <th className="text-left py-3 px-3 font-medium">状态</th>
               <th className="text-left py-3 px-3 font-medium">紧急</th>
               <th className="text-left py-3 px-3 font-medium">需审批</th>
@@ -192,12 +191,14 @@ export default function RequisitionPage() {
           <tbody>
             {filtered.map((req) => {
               const wo = getWorkOrderById(req.workOrderId)
+              const wh = getWarehouseById(req.warehouseId)
               const hasHighValue = req.items.some((it) => getPartById(it.partId)?.highValue)
               return (
                 <tr key={req.id} className={`border-b border-slate-800/60 hover:bg-slate-900/50 ${req.urgent ? 'border-l-2 border-l-red-500' : ''}`}>
                   <td className="py-3 px-3 text-slate-200 font-mono">{req.reqNo}</td>
-                  <td className="py-3 px-3 text-slate-300">{wo?.orderNo || '-'}</td>
+                  <td className="py-3 px-3 text-slate-300">{wo?.orderNo || (req.workOrderId ? req.workOrderId : '-')}</td>
                   <td className="py-3 px-3 text-slate-300">{req.applicant}</td>
+                  <td className="py-3 px-3 text-slate-300">{wh?.name || '-'}</td>
                   <td className="py-3 px-3"><StatusBadge status={req.status} /></td>
                   <td className="py-3 px-3">{req.urgent && <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-medium">紧急</span>}</td>
                   <td className="py-3 px-3">{req.needsApproval && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">是</span>}</td>
@@ -230,20 +231,29 @@ export default function RequisitionPage() {
             <div>
               <label className="block text-xs text-slate-400 mb-1">关联工单</label>
               <select value={newWorkOrderId} onChange={(e) => setNewWorkOrderId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none">
-                <option value="">选择工单</option>
+                <option value="">无关联工单（补货申领）</option>
                 {workOrders.map((wo) => <option key={wo.id} value={wo.id}>{wo.orderNo} - {wo.customerName}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1">申请人</label>
-              <input value={newApplicant} onChange={(e) => setNewApplicant(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none" placeholder="输入申请人" />
+              <input value={newApplicant} onChange={(e) => setNewApplicant(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none" placeholder={newWorkOrderId ? '输入申请人' : '补货申请人'} />
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <label className="text-xs text-slate-400">紧急申领</label>
-            <button onClick={() => setNewUrgent(!newUrgent)} className="text-slate-400 hover:text-blue-400 transition-colors">
-              {newUrgent ? <ToggleRight size={28} className="text-blue-500" /> : <ToggleLeft size={28} />}
-            </button>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">申领仓库</label>
+              <select value={newWarehouseId} onChange={(e) => setNewWarehouseId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none">
+                <option value="">选择仓库</option>
+                {warehouses.map((wh) => <option key={wh.id} value={wh.id}>{wh.name} ({wh.region})</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 pt-5">
+              <label className="text-xs text-slate-400">紧急申领</label>
+              <button onClick={() => setNewUrgent(!newUrgent)} className="text-slate-400 hover:text-blue-400 transition-colors">
+                {newUrgent ? <ToggleRight size={28} className="text-blue-500" /> : <ToggleLeft size={28} />}
+              </button>
+            </div>
           </div>
 
           <div className="border-t border-slate-800 pt-4">
@@ -290,7 +300,7 @@ export default function RequisitionPage() {
             </div>
           )}
 
-          <button onClick={handleCreate} disabled={!newWorkOrderId || !newApplicant || newItems.length === 0} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium rounded-lg transition-colors">
+          <button onClick={handleCreate} disabled={!newApplicant || newItems.length === 0} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium rounded-lg transition-colors">
             提交申领
           </button>
         </div>
@@ -299,9 +309,10 @@ export default function RequisitionPage() {
       <Modal open={approveOpen} onClose={() => setApproveOpen(false)} title="申领审批" wide>
         {selected && (
           <div className="space-y-4">
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-4 text-sm flex-wrap">
               <span className="text-slate-400">单号: <span className="text-slate-200">{selected.reqNo}</span></span>
               <span className="text-slate-400">申请人: <span className="text-slate-200">{selected.applicant}</span></span>
+              {selected.warehouseId && <span className="text-slate-400">仓库: <span className="text-slate-200">{getWarehouseById(selected.warehouseId)?.name || '-'}</span></span>}
               <StatusBadge status={selected.status} />
               {selected.urgent && <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">紧急</span>}
             </div>
@@ -395,11 +406,13 @@ export default function RequisitionPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="text-slate-400">申领单号: <span className="text-slate-200">{selected.reqNo}</span></div>
-              <div className="text-slate-400">关联工单: <span className="text-slate-200">{(() => { const wo = getWorkOrderById(selected.workOrderId); return wo ? `${wo.orderNo} (${wo.customerName})` : '-' })()}</span></div>
+              <div className="text-slate-400">关联工单: <span className="text-slate-200">{(() => { const wo = getWorkOrderById(selected.workOrderId); return wo ? `${wo.orderNo} (${wo.customerName})` : selected.workOrderId ? selected.workOrderId : '无（补货申领）' })()}</span></div>
               <div className="text-slate-400">申请人: <span className="text-slate-200">{selected.applicant}</span></div>
+              <div className="text-slate-400">申领仓库: <span className="text-slate-200">{getWarehouseById(selected.warehouseId)?.name || '-'}</span></div>
               <div className="text-slate-400">审批人: <span className="text-slate-200">{selected.approver || '-'}</span></div>
               <div className="text-slate-400">状态: <StatusBadge status={selected.status} /></div>
               <div className="text-slate-400">创建日期: <span className="text-slate-200">{selected.createdAt}</span></div>
+              {selected.urgent && <div className="text-slate-400">紧急: <span className="text-red-400">是</span></div>}
             </div>
             <table className="w-full text-sm">
               <thead>

@@ -44,15 +44,52 @@ export default function Analytics() {
   const [reportResult, setReportResult] = useState<{ name: string; value: number }[] | null>(null)
   useStore()
 
-  const filteredMonthly = useMemo(() => {
-    if (region === '全部' && brand === '全部') return monthlyStats
+  const getFactor = () => {
     const rf = region !== '全部' ? REGION_FACTOR[region] ?? 1 : 1
     const bf = brand !== '全部' ? BRAND_FACTOR[brand] ?? 1 : 1
+    return { rf, bf }
+  }
+
+  const filteredMonthly = useMemo(() => {
+    const { rf, bf } = getFactor()
+    if (rf === 1 && bf === 1) return monthlyStats
     return monthlyStats.map((m) => ({
       ...m,
       turnoverRate: +(m.turnoverRate * rf * bf).toFixed(1),
       fixRate: +(m.fixRate * bf).toFixed(0),
       inventoryValue: Math.round(m.inventoryValue * rf),
+    }))
+  }, [region, brand])
+
+  const filteredBrandStats = useMemo(() => {
+    const { rf } = getFactor()
+    if (rf === 1) return brandStats
+    return brandStats.map((b) => ({
+      ...b,
+      fixRate: +(b.fixRate * rf).toFixed(0),
+      turnoverRate: +(b.turnoverRate * rf).toFixed(1),
+      inventoryValue: Math.round(b.inventoryValue * rf),
+    }))
+  }, [region, brand])
+
+  const filteredRegionStats = useMemo(() => {
+    const { bf } = getFactor()
+    if (bf === 1) return regionStats
+    return regionStats.map((r) => ({
+      ...r,
+      fixRate: +(r.fixRate * bf).toFixed(0),
+      turnoverRate: +(r.turnoverRate * bf).toFixed(1),
+      inventoryValue: Math.round(r.inventoryValue * bf),
+    }))
+  }, [region, brand])
+
+  const filteredFaultStats = useMemo(() => {
+    const { rf, bf } = getFactor()
+    if (rf === 1 && bf === 1) return faultTypeStats
+    return faultTypeStats.map((f) => ({
+      ...f,
+      count: Math.round(f.count * rf * bf),
+      fixRate: +(f.fixRate * bf).toFixed(0),
     }))
   }, [region, brand])
 
@@ -64,18 +101,19 @@ export default function Analytics() {
   const currentFixRate = filteredMonthly[filteredMonthly.length - 1].fixRate
   const fixTrend = useMemo(() => +((currentFixRate - filteredMonthly[filteredMonthly.length - 2].fixRate) / filteredMonthly[filteredMonthly.length - 2].fixRate * 100).toFixed(1), [filteredMonthly, currentFixRate])
 
-  const totalInventory = useMemo(() => regionStats.reduce((s, r) => s + r.inventoryValue, 0), [])
-  const avgInventory = useMemo(() => +(totalInventory / regionStats.length).toFixed(0), [totalInventory])
-  const momChange = useMemo(() => +((monthlyStats[5].inventoryValue - monthlyStats[4].inventoryValue) / monthlyStats[4].inventoryValue * 100).toFixed(1), [])
+  const totalInventory = useMemo(() => filteredRegionStats.reduce((s, r) => s + r.inventoryValue, 0), [filteredRegionStats])
+  const avgInventory = useMemo(() => +(totalInventory / filteredRegionStats.length).toFixed(0), [totalInventory, filteredRegionStats])
+  const momChange = useMemo(() => +((filteredMonthly[5].inventoryValue - filteredMonthly[4].inventoryValue) / filteredMonthly[4].inventoryValue * 100).toFixed(1), [filteredMonthly])
 
   const generateReport = () => {
     const metricKey = reportMetric === '周转率' ? 'turnoverRate' : reportMetric === '修复率' ? 'fixRate' : 'inventoryValue'
     if (reportDim === '区域') {
-      setReportResult(regionStats.map((r) => ({ name: r.region, value: r[metricKey] })))
+      setReportResult(filteredRegionStats.map((r) => ({ name: r.region, value: r[metricKey] })))
     } else if (reportDim === '品牌') {
-      setReportResult(brandStats.map((b) => ({ name: b.brand, value: b[metricKey] })))
+      setReportResult(filteredBrandStats.map((b) => ({ name: b.brand, value: b[metricKey] })))
     } else {
-      setReportResult(faultTypeStats.map((f) => ({ name: f.faultType, value: f.fixRate })))
+      const fKey = reportMetric === '修复率' ? 'fixRate' : 'count'
+      setReportResult(filteredFaultStats.map((f) => ({ name: f.faultType, value: f[fKey] })))
     }
   }
 
@@ -94,11 +132,11 @@ export default function Analytics() {
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <Filter size={16} className="text-slate-500" />
-            <select value={region} onChange={(e) => setRegion(e.target.value)}
+            <select value={region} onChange={(e) => { setRegion(e.target.value); setReportResult(null) }}
               className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300">
               {REGIONS.map((r) => <option key={r}>{r}</option>)}
             </select>
-            <select value={brand} onChange={(e) => setBrand(e.target.value)}
+            <select value={brand} onChange={(e) => { setBrand(e.target.value); setReportResult(null) }}
               className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300">
               {BRANDS.map((b) => <option key={b}>{b}</option>)}
             </select>
@@ -145,7 +183,7 @@ export default function Analytics() {
               <div className="bg-slate-900 rounded-xl p-6 border border-slate-800">
                 <h3 className="text-base font-semibold text-slate-200 mb-4">品牌修复率</h3>
                 <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={brandStats} layout="vertical">
+                  <BarChart data={filteredBrandStats} layout="vertical">
                     <CartesianGrid {...gridStyle} />
                     <XAxis type="number" tick={axisTick} domain={[80, 100]} />
                     <YAxis type="category" dataKey="brand" tick={axisTick} width={50} />
@@ -158,8 +196,8 @@ export default function Analytics() {
                 <h3 className="text-base font-semibold text-slate-200 mb-4">故障类型分布</h3>
                 <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
-                    <Pie data={faultTypeStats} dataKey="count" nameKey="faultType" cx="50%" cy="50%" outerRadius={90} label={({ faultType, percent }) => `${faultType} ${(percent * 100).toFixed(0)}%`}>
-                      {faultTypeStats.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                    <Pie data={filteredFaultStats} dataKey="count" nameKey="faultType" cx="50%" cy="50%" outerRadius={90} label={({ faultType, percent }) => `${faultType} ${(percent * 100).toFixed(0)}%`}>
+                      {filteredFaultStats.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Pie>
                     <Tooltip {...tooltipStyle} />
                   </PieChart>
@@ -178,7 +216,7 @@ export default function Analytics() {
             <div className="bg-slate-900 rounded-xl p-6 border border-slate-800">
               <h3 className="text-base font-semibold text-slate-200 mb-4">区域库存金额</h3>
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={regionStats}>
+                <BarChart data={filteredRegionStats}>
                   <CartesianGrid {...gridStyle} />
                   <XAxis dataKey="region" tick={axisTick} />
                   <YAxis tick={axisTick} />
@@ -190,7 +228,7 @@ export default function Analytics() {
             <div className="bg-slate-900 rounded-xl p-6 border border-slate-800">
               <h3 className="text-base font-semibold text-slate-200 mb-4">月度库存趋势</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={monthlyStats}>
+                <LineChart data={filteredMonthly}>
                   <CartesianGrid {...gridStyle} />
                   <XAxis dataKey="month" tick={axisTick} />
                   <YAxis tick={axisTick} />
@@ -212,11 +250,11 @@ export default function Analytics() {
             <BarChart3 size={18} /> 自定义报表
           </h3>
           <div className="flex items-center gap-4 mb-4">
-            <select value={reportDim} onChange={(e) => setReportDim(e.target.value)}
+            <select value={reportDim} onChange={(e) => { setReportDim(e.target.value); setReportResult(null) }}
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
               {['区域', '品牌', '故障类型'].map((d) => <option key={d}>{d}</option>)}
             </select>
-            <select value={reportMetric} onChange={(e) => setReportMetric(e.target.value)}
+            <select value={reportMetric} onChange={(e) => { setReportMetric(e.target.value); setReportResult(null) }}
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
               {['周转率', '修复率', '库存金额'].map((m) => <option key={m}>{m}</option>)}
             </select>
@@ -224,6 +262,8 @@ export default function Analytics() {
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
               生成报表
             </button>
+            {region !== '全部' && <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">区域: {region}</span>}
+            {brand !== '全部' && <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">品牌: {brand}</span>}
           </div>
           {reportResult && (
             <table className="w-full text-sm">

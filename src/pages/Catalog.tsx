@@ -56,6 +56,7 @@ export default function Catalog() {
       reqNo: `REQ-2026-${String(requisitions.length + 1).padStart(4, '0')}`,
       workOrderId: '',
       applicant: reserveTech,
+      warehouseId: reserveWh,
       status: 'pending',
       urgent: false,
       needsApproval: reservePart.highValue,
