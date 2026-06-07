@@ -63,6 +63,11 @@ export default function Catalog() {
       approver: reservePart.highValue ? '王主管' : '',
       createdAt: new Date().toISOString().slice(0, 10),
       items: [item],
+      courier: '',
+      trackingNo: '',
+      reserveDate: reserveDate,
+      reserveTech: reserveTech,
+      auditTrail: [{ action: 'created', actor: reserveTech, timestamp: new Date().toLocaleString('zh-CN'), detail: '预约领料' }],
     }
     addRequisition(req)
     setReserveSuccess(true)
@@ -261,9 +266,11 @@ export default function Catalog() {
               <div className="text-center py-6 space-y-4">
                 <div className="flex justify-center"><CheckCircle2 size={48} className="text-emerald-400" /></div>
                 <div className="text-lg font-medium text-emerald-400">预约成功</div>
-                <div className="text-sm text-slate-400">
-                  {reservePart.partNo} - {reservePart.name}<br />
-                  仓库: {warehouses.find(w => w.id === reserveWh)?.name} · 日期: {reserveDate} · 技术员: {reserveTech}
+                <div className="text-sm text-slate-300 space-y-1">
+                  <div>{reservePart.partNo} - {reservePart.name}</div>
+                  <div className="text-slate-400">仓库: {warehouses.find(w => w.id === reserveWh)?.name}</div>
+                  <div className="text-slate-400">预约日期: {reserveDate}</div>
+                  <div className="text-slate-400">技术员: {reserveTech}</div>
                 </div>
                 <div className="flex gap-3 justify-center pt-2">
                   <button onClick={() => { setReservePart(null); setReserveSuccess(false) }} className="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-colors">继续浏览</button>

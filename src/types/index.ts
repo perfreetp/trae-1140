@@ -43,18 +43,30 @@ export interface InventoryItem {
   safetyLine: number
 }
 
+export interface AuditEntry {
+  action: 'created' | 'approved' | 'rejected' | 'shipped' | 'received'
+  actor: string
+  timestamp: string
+  detail?: string
+}
+
 export interface Requisition {
   id: string
   reqNo: string
   workOrderId: string
   applicant: string
   warehouseId: string
-  status: 'pending' | 'approved' | 'rejected' | 'shipped'
+  status: 'pending' | 'approved' | 'rejected' | 'shipped' | 'received'
   urgent: boolean
   needsApproval: boolean
   approver: string
   createdAt: string
   items: RequisitionItem[]
+  courier: string
+  trackingNo: string
+  reserveDate: string
+  reserveTech: string
+  auditTrail: AuditEntry[]
 }
 
 export interface RequisitionItem {
@@ -70,6 +82,7 @@ export interface Transfer {
   transferNo: string
   fromWarehouseId: string
   toWarehouseId: string
+  sourceRequisitionId: string
   status: 'pending' | 'shipping' | 'received'
   courier: string
   trackingNo: string

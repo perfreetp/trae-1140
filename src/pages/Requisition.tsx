@@ -5,7 +5,7 @@ import type { Requisition, RequisitionItem } from '@/types'
 import StatusBadge from '@/components/StatusBadge'
 import Modal from '@/components/Modal'
 import PageHeader from '@/components/PageHeader'
-import { Plus, Eye, CheckCircle, XCircle, Search, AlertTriangle, ArrowRightLeft, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Plus, Eye, CheckCircle, XCircle, Search, AlertTriangle, ArrowRightLeft, ToggleLeft, ToggleRight, Truck, PackageCheck } from 'lucide-react'
 
 interface NavState {
   workOrderId?: string
@@ -17,7 +17,7 @@ interface NavState {
   prefillQuantity?: number
 }
 
-type TabKey = 'all' | 'pending' | 'approved' | 'rejected' | 'shipped'
+type TabKey = 'all' | 'pending' | 'approved' | 'rejected' | 'shipped' | 'received'
 
 const tabs: { key: TabKey; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -25,17 +25,35 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: 'approved', label: '已批准' },
   { key: 'rejected', label: '已驳回' },
   { key: 'shipped', label: '已出库' },
+  { key: 'received', label: '已签收' },
 ]
+
+const actionLabels: Record<string, string> = {
+  created: '创建',
+  approved: '审批通过',
+  rejected: '驳回',
+  shipped: '出库',
+  received: '签收',
+}
+
+const actionColors: Record<string, string> = {
+  created: 'bg-slate-500',
+  approved: 'bg-emerald-500',
+  rejected: 'bg-red-500',
+  shipped: 'bg-cyan-500',
+  received: 'bg-blue-500',
+}
 
 export default function RequisitionPage() {
   const location = useLocation()
   const navState = (location.state as NavState) || {}
-  const { requisitions, workOrders, spareParts, warehouses, addRequisition, updateRequisitionStatus, getPartById, getWorkOrderById, getPartTotalStock, getWarehouseById } = useStore()
+  const { requisitions, workOrders, spareParts, warehouses, addRequisition, addTransfer, approveRequisition, rejectRequisition, shipRequisition, receiveRequisition, getPartById, getWorkOrderById, getPartTotalStock, getWarehouseById, getRequisitionById } = useStore()
 
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [approveOpen, setApproveOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [shipOpen, setShipOpen] = useState(false)
   const [selected, setSelected] = useState<Requisition | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [newWorkOrderId, setNewWorkOrderId] = useState('')
@@ -45,6 +63,8 @@ export default function RequisitionPage() {
   const [newItems, setNewItems] = useState<{ partId: string; quantity: number }[]>([])
   const [partSearch, setPartSearch] = useState('')
   const [substitutes, setSubstitutes] = useState<Record<string, string>>({})
+  const [shipCourier, setShipCourier] = useState('')
+  const [shipTrackingNo, setShipTrackingNo] = useState('')
 
   useEffect(() => {
     if (navState.workOrderId || navState.prefillPartId) {
@@ -80,13 +100,46 @@ export default function RequisitionPage() {
     setDetailOpen(true)
   }
 
+  const handleShip = (req: Requisition) => {
+    setSelected(req)
+    setShipCourier('')
+    setShipTrackingNo('')
+    setShipOpen(true)
+  }
+
+  const handleReceive = (req: Requisition) => {
+    receiveRequisition(req.id, '王主管')
+    const updated = getRequisitionById(req.id)
+    if (updated) {
+      setSelected(updated)
+      setDetailOpen(true)
+    }
+  }
+
   const submitApproval = (action: 'approved' | 'rejected') => {
     if (!selected) return
     if (action === 'rejected' && !rejectReason.trim()) return
-    updateRequisitionStatus(selected.id, action)
+    if (action === 'approved') {
+      approveRequisition(selected.id, '王主管')
+    } else {
+      rejectRequisition(selected.id, '王主管', rejectReason.trim())
+    }
     setApproveOpen(false)
     setSelected(null)
     setRejectReason('')
+  }
+
+  const submitShip = () => {
+    if (!selected || !shipCourier.trim() || !shipTrackingNo.trim()) return
+    shipRequisition(selected.id, shipCourier.trim(), shipTrackingNo.trim(), '王主管')
+    setShipOpen(false)
+    const updated = getRequisitionById(selected.id)
+    if (updated) {
+      setSelected(updated)
+      setDetailOpen(true)
+    }
+    setShipCourier('')
+    setShipTrackingNo('')
   }
 
   const confirmSubstitute = (itemId: string, subPartId: string) => {
@@ -114,6 +167,11 @@ export default function RequisitionPage() {
       approver: hasHighValue ? '王主管' : '',
       createdAt: new Date().toISOString().slice(0, 10),
       items,
+      courier: '',
+      trackingNo: '',
+      reserveDate: '',
+      reserveTech: '',
+      auditTrail: [{ action: 'created', actor: newApplicant, timestamp: new Date().toLocaleString('zh-CN'), detail: newWorkOrderId ? '创建申领单' : '创建补货申领单' }],
     }
     addRequisition(req)
     setCreateOpen(false)
@@ -184,6 +242,7 @@ export default function RequisitionPage() {
               <th className="text-left py-3 px-3 font-medium">紧急</th>
               <th className="text-left py-3 px-3 font-medium">需审批</th>
               <th className="text-left py-3 px-3 font-medium">审批人</th>
+              <th className="text-left py-3 px-3 font-medium">快递</th>
               <th className="text-left py-3 px-3 font-medium">创建日期</th>
               <th className="text-left py-3 px-3 font-medium">操作</th>
             </tr>
@@ -203,12 +262,27 @@ export default function RequisitionPage() {
                   <td className="py-3 px-3">{req.urgent && <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-medium">紧急</span>}</td>
                   <td className="py-3 px-3">{req.needsApproval && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">是</span>}</td>
                   <td className="py-3 px-3 text-slate-400">{req.approver || '-'}</td>
+                  <td className="py-3 px-3 text-slate-400">
+                    {(req.status === 'shipped' || req.status === 'received') && req.courier ? (
+                      <span className="text-xs text-cyan-400">{req.courier}</span>
+                    ) : '-'}
+                  </td>
                   <td className="py-3 px-3 text-slate-400">{req.createdAt}</td>
                   <td className="py-3 px-3">
                     <div className="flex items-center gap-2">
                       {req.status === 'pending' && (
                         <button onClick={() => handleApprove(req)} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 rounded text-xs font-medium transition-colors">
                           <CheckCircle size={12} /> 审批
+                        </button>
+                      )}
+                      {req.status === 'approved' && (
+                        <button onClick={() => handleShip(req)} className="flex items-center gap-1 px-2.5 py-1 bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30 rounded text-xs font-medium transition-colors">
+                          <Truck size={12} /> 安排出库
+                        </button>
+                      )}
+                      {req.status === 'shipped' && (
+                        <button onClick={() => handleReceive(req)} className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 rounded text-xs font-medium transition-colors">
+                          <PackageCheck size={12} /> 确认签收
                         </button>
                       )}
                       <button onClick={() => handleDetail(req)} className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700 rounded text-xs font-medium transition-colors">
@@ -401,6 +475,29 @@ export default function RequisitionPage() {
         )}
       </Modal>
 
+      <Modal open={shipOpen} onClose={() => setShipOpen(false)} title="安排出库">
+        {selected && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4 text-sm flex-wrap">
+              <span className="text-slate-400">单号: <span className="text-slate-200">{selected.reqNo}</span></span>
+              <span className="text-slate-400">申请人: <span className="text-slate-200">{selected.applicant}</span></span>
+              <StatusBadge status={selected.status} />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">快递公司</label>
+              <input value={shipCourier} onChange={(e) => setShipCourier(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none" placeholder="如：顺丰、京东物流" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">快递单号</label>
+              <input value={shipTrackingNo} onChange={(e) => setShipTrackingNo(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none" placeholder="输入快递单号" />
+            </div>
+            <button onClick={submitShip} disabled={!shipCourier.trim() || !shipTrackingNo.trim()} className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium rounded-lg transition-colors">
+              确认出库
+            </button>
+          </div>
+        )}
+      </Modal>
+
       <Modal open={detailOpen} onClose={() => setDetailOpen(false)} title="申领详情" wide>
         {selected && (
           <div className="space-y-4">
@@ -413,6 +510,10 @@ export default function RequisitionPage() {
               <div className="text-slate-400">状态: <StatusBadge status={selected.status} /></div>
               <div className="text-slate-400">创建日期: <span className="text-slate-200">{selected.createdAt}</span></div>
               {selected.urgent && <div className="text-slate-400">紧急: <span className="text-red-400">是</span></div>}
+              {selected.reserveDate && <div className="text-slate-400">预约日期: <span className="text-slate-200">{selected.reserveDate}</span></div>}
+              {selected.reserveTech && <div className="text-slate-400">技术人员: <span className="text-slate-200">{selected.reserveTech}</span></div>}
+              {selected.courier && <div className="text-slate-400">快递公司: <span className="text-cyan-400">{selected.courier}</span></div>}
+              {selected.trackingNo && <div className="text-slate-400">快递单号: <span className="text-cyan-400 font-mono">{selected.trackingNo}</span></div>}
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -478,6 +579,26 @@ export default function RequisitionPage() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {selected.auditTrail && selected.auditTrail.length > 0 && (
+              <div>
+                <div className="text-sm font-medium text-slate-300 mb-3">操作记录</div>
+                <div className="relative pl-6">
+                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-slate-700" />
+                  {selected.auditTrail.map((entry, idx) => (
+                    <div key={idx} className="relative pb-4 last:pb-0">
+                      <div className={`absolute left-[-20px] top-1 w-3 h-3 rounded-full border-2 border-slate-900 ${actionColors[entry.action] || 'bg-slate-500'}`} />
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-slate-200 font-medium">{actionLabels[entry.action] || entry.action}</span>
+                        <span className="text-slate-500 text-xs">{entry.actor}</span>
+                        <span className="text-slate-600 text-xs">{entry.timestamp}</span>
+                      </div>
+                      {entry.detail && <div className="text-xs text-slate-400 mt-0.5">{entry.detail}</div>}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

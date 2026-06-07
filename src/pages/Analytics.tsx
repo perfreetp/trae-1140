@@ -61,25 +61,27 @@ export default function Analytics() {
     }))
   }, [region, brand])
 
-  const filteredBrandStats = useMemo(() => {
-    const { rf } = getFactor()
-    if (rf === 1) return brandStats
-    return brandStats.map((b) => ({
-      ...b,
-      fixRate: +(b.fixRate * rf).toFixed(0),
-      turnoverRate: +(b.turnoverRate * rf).toFixed(1),
-      inventoryValue: Math.round(b.inventoryValue * rf),
-    }))
-  }, [region, brand])
-
   const filteredRegionStats = useMemo(() => {
     const { bf } = getFactor()
-    if (bf === 1) return regionStats
-    return regionStats.map((r) => ({
+    let base = region !== '全部' ? regionStats.filter((r) => r.region === region) : regionStats
+    if (bf === 1) return base
+    return base.map((r) => ({
       ...r,
       fixRate: +(r.fixRate * bf).toFixed(0),
       turnoverRate: +(r.turnoverRate * bf).toFixed(1),
       inventoryValue: Math.round(r.inventoryValue * bf),
+    }))
+  }, [region, brand])
+
+  const filteredBrandStats = useMemo(() => {
+    const { rf } = getFactor()
+    let base = brand !== '全部' ? brandStats.filter((b) => b.brand === brand) : brandStats
+    if (rf === 1) return base
+    return base.map((b) => ({
+      ...b,
+      fixRate: +(b.fixRate * rf).toFixed(0),
+      turnoverRate: +(b.turnoverRate * rf).toFixed(1),
+      inventoryValue: Math.round(b.inventoryValue * rf),
     }))
   }, [region, brand])
 
@@ -102,7 +104,7 @@ export default function Analytics() {
   const fixTrend = useMemo(() => +((currentFixRate - filteredMonthly[filteredMonthly.length - 2].fixRate) / filteredMonthly[filteredMonthly.length - 2].fixRate * 100).toFixed(1), [filteredMonthly, currentFixRate])
 
   const totalInventory = useMemo(() => filteredRegionStats.reduce((s, r) => s + r.inventoryValue, 0), [filteredRegionStats])
-  const avgInventory = useMemo(() => +(totalInventory / filteredRegionStats.length).toFixed(0), [totalInventory, filteredRegionStats])
+  const avgInventory = useMemo(() => filteredRegionStats.length > 0 ? +(totalInventory / filteredRegionStats.length).toFixed(0) : 0, [totalInventory, filteredRegionStats])
   const momChange = useMemo(() => +((filteredMonthly[5].inventoryValue - filteredMonthly[4].inventoryValue) / filteredMonthly[4].inventoryValue * 100).toFixed(1), [filteredMonthly])
 
   const generateReport = () => {
