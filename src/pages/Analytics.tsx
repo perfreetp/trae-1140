@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell,
@@ -12,6 +12,9 @@ const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4
 const REGIONS = ['全部', '华东', '华南', '华北', '西南', '华中']
 const BRANDS = ['全部', '格力', '海尔', '美的', '三花', '通用']
 const TABS = ['备件周转', '一次修复率', '库存占用'] as const
+
+const REGION_FACTOR: Record<string, number> = { '华东': 0.95, '华南': 0.88, '华北': 0.82, '西南': 0.75, '华中': 0.85 }
+const BRAND_FACTOR: Record<string, number> = { '格力': 0.92, '海尔': 0.90, '美的': 0.87, '三花': 0.95, '通用': 0.98 }
 
 const tooltipStyle = { contentStyle: { background: '#1e293b', border: '1px solid #334155', borderRadius: 8, color: '#f1f5f9' } }
 const axisTick = { fill: '#94a3b8', fontSize: 12 }
@@ -41,26 +44,29 @@ export default function Analytics() {
   const [reportResult, setReportResult] = useState<{ name: string; value: number }[] | null>(null)
   useStore()
 
-  const filteredMonthly = region === '全部' && brand === '全部'
-    ? monthlyStats
-    : monthlyStats.map((m) => ({
-        ...m,
-        turnoverRate: region !== '全部' ? +(m.turnoverRate * (0.85 + Math.random() * 0.3)).toFixed(1) : m.turnoverRate,
-        fixRate: brand !== '全部' ? +(m.fixRate * (0.9 + Math.random() * 0.2)).toFixed(0) : m.fixRate,
-        inventoryValue: region !== '全部' ? +(m.inventoryValue * (0.3 + Math.random() * 0.4)) : m.inventoryValue,
-      }))
+  const filteredMonthly = useMemo(() => {
+    if (region === '全部' && brand === '全部') return monthlyStats
+    const rf = region !== '全部' ? REGION_FACTOR[region] ?? 1 : 1
+    const bf = brand !== '全部' ? BRAND_FACTOR[brand] ?? 1 : 1
+    return monthlyStats.map((m) => ({
+      ...m,
+      turnoverRate: +(m.turnoverRate * rf * bf).toFixed(1),
+      fixRate: +(m.fixRate * bf).toFixed(0),
+      inventoryValue: Math.round(m.inventoryValue * rf),
+    }))
+  }, [region, brand])
 
-  const avgTurnover = +(filteredMonthly.reduce((s, m) => s + m.turnoverRate, 0) / filteredMonthly.length).toFixed(1)
+  const avgTurnover = useMemo(() => +(filteredMonthly.reduce((s, m) => s + m.turnoverRate, 0) / filteredMonthly.length).toFixed(1), [filteredMonthly])
   const currentTurnover = filteredMonthly[filteredMonthly.length - 1].turnoverRate
-  const turnoverTrend = +((currentTurnover - filteredMonthly[filteredMonthly.length - 2].turnoverRate) / filteredMonthly[filteredMonthly.length - 2].turnoverRate * 100).toFixed(1)
+  const turnoverTrend = useMemo(() => +((currentTurnover - filteredMonthly[filteredMonthly.length - 2].turnoverRate) / filteredMonthly[filteredMonthly.length - 2].turnoverRate * 100).toFixed(1), [filteredMonthly, currentTurnover])
 
-  const avgFixRate = +(filteredMonthly.reduce((s, m) => s + m.fixRate, 0) / filteredMonthly.length).toFixed(0)
+  const avgFixRate = useMemo(() => +(filteredMonthly.reduce((s, m) => s + m.fixRate, 0) / filteredMonthly.length).toFixed(0), [filteredMonthly])
   const currentFixRate = filteredMonthly[filteredMonthly.length - 1].fixRate
-  const fixTrend = +((currentFixRate - filteredMonthly[filteredMonthly.length - 2].fixRate) / filteredMonthly[filteredMonthly.length - 2].fixRate * 100).toFixed(1)
+  const fixTrend = useMemo(() => +((currentFixRate - filteredMonthly[filteredMonthly.length - 2].fixRate) / filteredMonthly[filteredMonthly.length - 2].fixRate * 100).toFixed(1), [filteredMonthly, currentFixRate])
 
-  const totalInventory = regionStats.reduce((s, r) => s + r.inventoryValue, 0)
-  const avgInventory = +(totalInventory / regionStats.length).toFixed(0)
-  const momChange = +((monthlyStats[5].inventoryValue - monthlyStats[4].inventoryValue) / monthlyStats[4].inventoryValue * 100).toFixed(1)
+  const totalInventory = useMemo(() => regionStats.reduce((s, r) => s + r.inventoryValue, 0), [])
+  const avgInventory = useMemo(() => +(totalInventory / regionStats.length).toFixed(0), [totalInventory])
+  const momChange = useMemo(() => +((monthlyStats[5].inventoryValue - monthlyStats[4].inventoryValue) / monthlyStats[4].inventoryValue * 100).toFixed(1), [])
 
   const generateReport = () => {
     const metricKey = reportMetric === '周转率' ? 'turnoverRate' : reportMetric === '修复率' ? 'fixRate' : 'inventoryValue'

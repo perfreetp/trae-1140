@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useStore } from '@/store'
 import type { Requisition, RequisitionItem } from '@/types'
 import StatusBadge from '@/components/StatusBadge'
 import Modal from '@/components/Modal'
 import PageHeader from '@/components/PageHeader'
 import { Plus, Eye, CheckCircle, XCircle, Search, AlertTriangle, ArrowRightLeft, ToggleLeft, ToggleRight } from 'lucide-react'
+
+interface NavState {
+  workOrderId?: string
+  applicant?: string
+  urgent?: boolean
+  partIds?: string[]
+  prefillPartId?: string
+  prefillWarehouseId?: string
+  prefillQuantity?: number
+}
 
 type TabKey = 'all' | 'pending' | 'approved' | 'rejected' | 'shipped'
 
@@ -25,6 +36,8 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function RequisitionPage() {
+  const location = useLocation()
+  const navState = (location.state as NavState) || {}
   const { requisitions, workOrders, spareParts, addRequisition, updateRequisitionStatus, getPartById, getWorkOrderById, getPartTotalStock } = useStore()
 
   const [activeTab, setActiveTab] = useState<TabKey>('all')
@@ -39,6 +52,21 @@ export default function RequisitionPage() {
   const [newItems, setNewItems] = useState<{ partId: string; quantity: number }[]>([])
   const [partSearch, setPartSearch] = useState('')
   const [substitutes, setSubstitutes] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (navState.workOrderId || navState.prefillPartId) {
+      setNewWorkOrderId(navState.workOrderId || '')
+      setNewApplicant(navState.applicant || '')
+      setNewUrgent(navState.urgent || false)
+      if (navState.partIds) {
+        setNewItems(navState.partIds.map((pid) => ({ partId: pid, quantity: 1 })))
+      } else if (navState.prefillPartId) {
+        setNewItems([{ partId: navState.prefillPartId, quantity: navState.prefillQuantity || 1 }])
+      }
+      setCreateOpen(true)
+      window.history.replaceState({}, '')
+    }
+  }, [])
 
   const filtered = activeTab === 'all' ? requisitions : requisitions.filter((r) => r.status === activeTab)
 
@@ -367,7 +395,7 @@ export default function RequisitionPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="text-slate-400">申领单号: <span className="text-slate-200">{selected.reqNo}</span></div>
-              <div className="text-slate-400">关联工单: <span className="text-slate-200">{getWorkOrderById(selected.workOrderId)?.orderNo || '-'}</span></div>
+              <div className="text-slate-400">关联工单: <span className="text-slate-200">{(() => { const wo = getWorkOrderById(selected.workOrderId); return wo ? `${wo.orderNo} (${wo.customerName})` : '-' })()}</span></div>
               <div className="text-slate-400">申请人: <span className="text-slate-200">{selected.applicant}</span></div>
               <div className="text-slate-400">审批人: <span className="text-slate-200">{selected.approver || '-'}</span></div>
               <div className="text-slate-400">状态: <StatusBadge status={selected.status} /></div>

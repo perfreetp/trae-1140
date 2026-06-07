@@ -1,14 +1,16 @@
 import { useState, useMemo } from 'react'
-import { Search, Filter, Eye, CalendarPlus, X, Gem, Package } from 'lucide-react'
+import { Search, Filter, Eye, CalendarPlus, X, Gem, Package, CheckCircle2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store'
 import PageHeader from '@/components/PageHeader'
 import SidePanel from '@/components/SidePanel'
-import type { SparePart } from '@/types'
+import type { SparePart, Requisition, RequisitionItem } from '@/types'
 
 const CATEGORIES = ['空调', '冰箱', '洗衣机', '热水器']
 
 export default function Catalog() {
-  const { spareParts, warehouses, inventoryItems, getPartTotalStock, getPartById } = useStore()
+  const navigate = useNavigate()
+  const { spareParts, warehouses, inventoryItems, getPartTotalStock, getPartById, addRequisition, requisitions } = useStore()
 
   const [search, setSearch] = useState('')
   const [brandFilter, setBrandFilter] = useState('')
@@ -19,6 +21,7 @@ export default function Catalog() {
   const [reserveWh, setReserveWh] = useState('')
   const [reserveDate, setReserveDate] = useState('')
   const [reserveTech, setReserveTech] = useState('')
+  const [reserveSuccess, setReserveSuccess] = useState(false)
 
   const brands = useMemo(() => [...new Set(spareParts.map((p) => p.brand))], [spareParts])
 
@@ -40,10 +43,28 @@ export default function Catalog() {
     Math.max(1, ...warehouses.map((w) => getWhStock(partId, w.id)))
 
   const handleReserve = () => {
-    setReservePart(null)
-    setReserveWh('')
-    setReserveDate('')
-    setReserveTech('')
+    if (!reservePart || !reserveWh || !reserveDate || !reserveTech) return
+    const item: RequisitionItem = {
+      id: `ri_res_${Date.now()}`,
+      partId: reservePart.id,
+      quantity: 1,
+      substituted: false,
+      originalPartId: '',
+    }
+    const req: Requisition = {
+      id: `req_res_${Date.now()}`,
+      reqNo: `REQ-2026-${String(requisitions.length + 1).padStart(4, '0')}`,
+      workOrderId: '',
+      applicant: reserveTech,
+      status: 'pending',
+      urgent: false,
+      needsApproval: reservePart.highValue,
+      approver: reservePart.highValue ? '王主管' : '',
+      createdAt: new Date().toISOString().slice(0, 10),
+      items: [item],
+    }
+    addRequisition(req)
+    setReserveSuccess(true)
   }
 
   return (
@@ -229,36 +250,53 @@ export default function Catalog() {
 
       {reservePart && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setReservePart(null)} />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setReservePart(null); setReserveSuccess(false) }} />
           <div className="relative bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-[400px] p-6">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold text-slate-100">预约领料</h3>
-              <button onClick={() => setReservePart(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200"><X size={18} /></button>
+              <button onClick={() => { setReservePart(null); setReserveSuccess(false) }} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200"><X size={18} /></button>
             </div>
-            <div className="mb-3 text-sm text-slate-400">
-              备件: <span className="text-slate-200">{reservePart.partNo} - {reservePart.name}</span>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">选择仓库</label>
-                <select value={reserveWh} onChange={(e) => setReserveWh(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-600">
-                  <option value="">请选择</option>
-                  {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
+            {reserveSuccess ? (
+              <div className="text-center py-6 space-y-4">
+                <div className="flex justify-center"><CheckCircle2 size={48} className="text-emerald-400" /></div>
+                <div className="text-lg font-medium text-emerald-400">预约成功</div>
+                <div className="text-sm text-slate-400">
+                  {reservePart.partNo} - {reservePart.name}<br />
+                  仓库: {warehouses.find(w => w.id === reserveWh)?.name} · 日期: {reserveDate} · 技术员: {reserveTech}
+                </div>
+                <div className="flex gap-3 justify-center pt-2">
+                  <button onClick={() => { setReservePart(null); setReserveSuccess(false) }} className="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-colors">继续浏览</button>
+                  <button onClick={() => { setReservePart(null); setReserveSuccess(false); navigate('/requisition') }} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-500 transition-colors">查看申领单</button>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">预约日期</label>
-                <input type="date" value={reserveDate} onChange={(e) => setReserveDate(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-600" />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">技术人员</label>
-                <input value={reserveTech} onChange={(e) => setReserveTech(e.target.value)} placeholder="请输入姓名" className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-600" />
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setReservePart(null)} className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition-colors">取消</button>
-              <button onClick={handleReserve} disabled={!reserveWh || !reserveDate || !reserveTech} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">确认预约</button>
-            </div>
+            ) : (
+              <>
+                <div className="mb-3 text-sm text-slate-400">
+                  备件: <span className="text-slate-200">{reservePart.partNo} - {reservePart.name}</span>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">选择仓库</label>
+                    <select value={reserveWh} onChange={(e) => setReserveWh(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-600">
+                      <option value="">请选择</option>
+                      {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">预约日期</label>
+                    <input type="date" value={reserveDate} onChange={(e) => setReserveDate(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-600" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">技术人员</label>
+                    <input value={reserveTech} onChange={(e) => setReserveTech(e.target.value)} placeholder="请输入姓名" className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-600" />
+                  </div>
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button onClick={() => setReservePart(null)} className="px-4 py-2 rounded-lg text-sm text-slate-400 hover:bg-slate-800 transition-colors">取消</button>
+                  <button onClick={handleReserve} disabled={!reserveWh || !reserveDate || !reserveTech} className="px-4 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">确认预约</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

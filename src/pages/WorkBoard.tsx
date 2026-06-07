@@ -212,7 +212,7 @@ export default function WorkBoard() {
                             查看备件
                           </button>
                           <button
-                            onClick={() => navigate('/requisition', { state: { workOrderId: order.id } })}
+                            onClick={() => navigate('/requisition', { state: { workOrderId: order.id, applicant: order.technician, urgent: order.urgent, partIds: order.sparePartIds } })}
                             className="rounded px-2 py-1 text-xs text-emerald-400 hover:bg-emerald-500/10"
                           >
                             创建申领

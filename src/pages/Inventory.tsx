@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '@/store'
 import PageHeader from '@/components/PageHeader'
 import { Warehouse, Filter, AlertTriangle, X, Package, Truck, ShieldAlert } from 'lucide-react'
@@ -35,6 +36,7 @@ interface DetailData {
 }
 
 export default function Inventory() {
+  const navigate = useNavigate()
   const { spareParts, warehouses, inventoryItems, getPartById, getWarehouseById } = useStore()
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('all')
   const [selectedCategory, setSelectedCategory] = useState<string>('全部')
@@ -81,6 +83,12 @@ export default function Inventory() {
       return true
     })
   }, [alerts, selectedCategory, selectedWarehouse, getPartById])
+
+  const goToRequisition = (partId: string, warehouseId: string, suggestedQty: number) => {
+    navigate('/requisition', {
+      state: { prefillPartId: partId, prefillWarehouseId: warehouseId, prefillQuantity: suggestedQty }
+    })
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -192,7 +200,7 @@ export default function Inventory() {
                           <div className="text-xs font-medium text-slate-200 truncate">{part.name}</div>
                           <div className="text-[10px] text-slate-500">{part.partNo} · {wh.name}</div>
                         </div>
-                        <button className="text-[10px] bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded-md whitespace-nowrap transition-colors">
+                        <button onClick={() => goToRequisition(a.partId, a.warehouseId, a.safetyLine - a.quantity)} className="text-[10px] bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded-md whitespace-nowrap transition-colors">
                           创建申领
                         </button>
                       </div>
@@ -274,7 +282,7 @@ export default function Inventory() {
                     {levelLabels[level]}
                   </div>
                   {level === 'out' || level === 'danger' ? (
-                    <button className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors">
+                    <button onClick={() => { goToRequisition(detail.partId, detail.warehouseId, detail.safetyLine - detail.quantity); setDetail(null) }} className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors">
                       创建申领
                     </button>
                   ) : null}
