@@ -8,7 +8,6 @@ import type {
   Requisition,
   Transfer,
   Recovery,
-  AuditEntry,
 } from '@/types'
 import {
   workOrders as initialWorkOrders,
@@ -32,7 +31,7 @@ interface AppState {
   addRequisition: (req: Requisition) => void
   approveRequisition: (id: string, approver: string) => void
   rejectRequisition: (id: string, approver: string, reason: string) => void
-  shipRequisition: (id: string, courier: string, trackingNo: string, operator: string) => void
+  shipRequisition: (id: string, shipWarehouseId: string, courier: string, trackingNo: string, operator: string) => void
   receiveRequisition: (id: string, operator: string) => void
   updateRequisitionStatus: (id: string, status: Requisition['status']) => void
 
@@ -104,16 +103,30 @@ export const useStore = create<AppState>()(
           ),
         })),
 
-      shipRequisition: (id, courier, trackingNo, operator) => {
+      shipRequisition: (id, shipWarehouseId, courier, trackingNo, operator) => {
         const req = get().requisitions.find((r) => r.id === id)
         if (!req) return
-        const whId = req.warehouseId
+        const ts = new Date().toLocaleString('zh-CN')
+        const today = new Date().toISOString().slice(0, 10)
+        const transferNo = `TF-2026-${String(get().transfers.length + 1).padStart(4, '0')}`
+        const newTransfer: Transfer = {
+          id: `tf_from_req_${Date.now()}`,
+          transferNo,
+          fromWarehouseId: shipWarehouseId,
+          toWarehouseId: req.warehouseId,
+          sourceRequisitionId: id,
+          status: 'shipping' as const,
+          courier,
+          trackingNo,
+          createdAt: today,
+          items: req.items.map((it, i) => ({ id: `tfi_${Date.now()}_${i}`, partId: it.partId, quantity: it.quantity })),
+        }
         set((s) => {
           const newInventory = s.inventoryItems.map((inv) => {
-            if (inv.warehouseId !== whId) return inv
+            if (inv.warehouseId !== shipWarehouseId) return inv
             const reqItem = req.items.find((it) => it.partId === inv.partId)
             if (!reqItem) return inv
-            return { ...inv, quantity: Math.max(0, inv.quantity - reqItem.quantity) }
+            return { ...inv, quantity: Math.max(0, inv.quantity - reqItem.quantity), inTransit: inv.inTransit + reqItem.quantity }
           })
           return {
             inventoryItems: newInventory,
@@ -126,11 +139,12 @@ export const useStore = create<AppState>()(
                     trackingNo,
                     auditTrail: [
                       ...r.auditTrail,
-                      { action: 'shipped' as const, actor: operator, timestamp: new Date().toLocaleString('zh-CN'), detail: `已出库，${courier} ${trackingNo}` },
+                      { action: 'shipped' as const, actor: operator, timestamp: ts, detail: `已出库，仓库：${get().warehouses.find(w => w.id === shipWarehouseId)?.name || shipWarehouseId}，${courier} ${trackingNo}` },
                     ],
                   }
                 : r
             ),
+            transfers: [newTransfer, ...s.transfers],
           }
         })
       },
@@ -192,6 +206,7 @@ export const useStore = create<AppState>()(
       receiveTransfer: (id, operator) => {
         const tf = get().transfers.find((t) => t.id === id)
         if (!tf) return
+        const ts = new Date().toLocaleString('zh-CN')
         set((s) => {
           const newInventory = s.inventoryItems.map((inv) => {
             if (inv.warehouseId === tf.toWarehouseId) {
@@ -204,8 +219,24 @@ export const useStore = create<AppState>()(
             }
             return inv
           })
+          let newRequisitions = s.requisitions
+          if (tf.sourceRequisitionId) {
+            newRequisitions = s.requisitions.map((r) =>
+              r.id === tf.sourceRequisitionId
+                ? {
+                    ...r,
+                    status: 'received' as const,
+                    auditTrail: [
+                      ...r.auditTrail,
+                      { action: 'received' as const, actor: operator, timestamp: ts, detail: `签收完成，调拨单 ${tf.transferNo}` },
+                    ],
+                  }
+                : r
+            )
+          }
           return {
             inventoryItems: newInventory,
+            requisitions: newRequisitions,
             transfers: s.transfers.map((t) =>
               t.id === id ? { ...t, status: 'received' as const } : t
             ),

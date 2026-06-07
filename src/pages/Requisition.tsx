@@ -65,6 +65,8 @@ export default function RequisitionPage() {
   const [substitutes, setSubstitutes] = useState<Record<string, string>>({})
   const [shipCourier, setShipCourier] = useState('')
   const [shipTrackingNo, setShipTrackingNo] = useState('')
+  const [shipWarehouseId, setShipWarehouseId] = useState('')
+  const [shipError, setShipError] = useState('')
 
   useEffect(() => {
     if (navState.workOrderId || navState.prefillPartId) {
@@ -104,6 +106,8 @@ export default function RequisitionPage() {
     setSelected(req)
     setShipCourier('')
     setShipTrackingNo('')
+    setShipWarehouseId(req.warehouseId)
+    setShipError('')
     setShipOpen(true)
   }
 
@@ -130,8 +134,17 @@ export default function RequisitionPage() {
   }
 
   const submitShip = () => {
-    if (!selected || !shipCourier.trim() || !shipTrackingNo.trim()) return
-    shipRequisition(selected.id, shipCourier.trim(), shipTrackingNo.trim(), '王主管')
+    if (!selected || !shipCourier.trim() || !shipTrackingNo.trim() || !shipWarehouseId) return
+    const insufficient = selected.items.filter((it) => {
+      const stock = useStore.getState().getPartStock(it.partId, shipWarehouseId)
+      return stock < it.quantity
+    })
+    if (insufficient.length > 0) {
+      const names = insufficient.map((it) => getPartById(it.partId)?.name || it.partId).join('、')
+      setShipError(`库存不足：${names}，请更换出库仓库`)
+      return
+    }
+    shipRequisition(selected.id, shipWarehouseId, shipCourier.trim(), shipTrackingNo.trim(), '王主管')
     setShipOpen(false)
     const updated = getRequisitionById(selected.id)
     if (updated) {
@@ -140,6 +153,8 @@ export default function RequisitionPage() {
     }
     setShipCourier('')
     setShipTrackingNo('')
+    setShipWarehouseId('')
+    setShipError('')
   }
 
   const confirmSubstitute = (itemId: string, subPartId: string) => {
@@ -475,7 +490,7 @@ export default function RequisitionPage() {
         )}
       </Modal>
 
-      <Modal open={shipOpen} onClose={() => setShipOpen(false)} title="安排出库">
+      <Modal open={shipOpen} onClose={() => setShipOpen(false)} title="安排出库" wide>
         {selected && (
           <div className="space-y-4">
             <div className="flex items-center gap-4 text-sm flex-wrap">
@@ -484,6 +499,33 @@ export default function RequisitionPage() {
               <StatusBadge status={selected.status} />
             </div>
             <div>
+              <label className="block text-xs text-slate-400 mb-1">出库仓库</label>
+              <select value={shipWarehouseId} onChange={(e) => { setShipWarehouseId(e.target.value); setShipError('') }} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none">
+                {warehouses.map((wh) => <option key={wh.id} value={wh.id}>{wh.name} ({wh.region})</option>)}
+              </select>
+            </div>
+            {shipWarehouseId && (
+              <div className="bg-slate-800/60 rounded-lg p-3">
+                <div className="text-xs text-slate-400 mb-2">备件库存校验</div>
+                {selected.items.map((it) => {
+                  const part = getPartById(it.partId)
+                  const stock = useStore.getState().getPartStock(it.partId, shipWarehouseId)
+                  const ok = stock >= it.quantity
+                  return (
+                    <div key={it.id} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-slate-300">{part?.name || it.partId}</span>
+                      <span className={ok ? 'text-emerald-400' : 'text-red-400'}>
+                        需求: {it.quantity} / 库存: {stock} {ok ? '✓' : '✗ 不足'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {shipError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-400">{shipError}</div>
+            )}
+            <div>
               <label className="block text-xs text-slate-400 mb-1">快递公司</label>
               <input value={shipCourier} onChange={(e) => setShipCourier(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none" placeholder="如：顺丰、京东物流" />
             </div>
@@ -491,7 +533,7 @@ export default function RequisitionPage() {
               <label className="block text-xs text-slate-400 mb-1">快递单号</label>
               <input value={shipTrackingNo} onChange={(e) => setShipTrackingNo(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-blue-600 outline-none" placeholder="输入快递单号" />
             </div>
-            <button onClick={submitShip} disabled={!shipCourier.trim() || !shipTrackingNo.trim()} className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium rounded-lg transition-colors">
+            <button onClick={submitShip} disabled={!shipCourier.trim() || !shipTrackingNo.trim() || !shipWarehouseId} className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-medium rounded-lg transition-colors">
               确认出库
             </button>
           </div>

@@ -107,14 +107,17 @@ export default function Analytics() {
   const avgInventory = useMemo(() => filteredRegionStats.length > 0 ? +(totalInventory / filteredRegionStats.length).toFixed(0) : 0, [totalInventory, filteredRegionStats])
   const momChange = useMemo(() => +((filteredMonthly[5].inventoryValue - filteredMonthly[4].inventoryValue) / filteredMonthly[4].inventoryValue * 100).toFixed(1), [filteredMonthly])
 
+  const availableMetrics = reportDim === '故障类型' ? ['故障数量', '修复率'] : ['周转率', '修复率', '库存金额']
+  const effectiveMetric = availableMetrics.includes(reportMetric) ? reportMetric : availableMetrics[0]
+
   const generateReport = () => {
-    const metricKey = reportMetric === '周转率' ? 'turnoverRate' : reportMetric === '修复率' ? 'fixRate' : 'inventoryValue'
+    const metricKey = effectiveMetric === '周转率' ? 'turnoverRate' : effectiveMetric === '修复率' ? 'fixRate' : effectiveMetric === '故障数量' ? 'count' : 'inventoryValue'
     if (reportDim === '区域') {
       setReportResult(filteredRegionStats.map((r) => ({ name: r.region, value: r[metricKey] })))
     } else if (reportDim === '品牌') {
       setReportResult(filteredBrandStats.map((b) => ({ name: b.brand, value: b[metricKey] })))
     } else {
-      const fKey = reportMetric === '修复率' ? 'fixRate' : 'count'
+      const fKey = effectiveMetric === '修复率' ? 'fixRate' : 'count'
       setReportResult(filteredFaultStats.map((f) => ({ name: f.faultType, value: f[fKey] })))
     }
   }
@@ -256,9 +259,9 @@ export default function Analytics() {
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
               {['区域', '品牌', '故障类型'].map((d) => <option key={d}>{d}</option>)}
             </select>
-            <select value={reportMetric} onChange={(e) => { setReportMetric(e.target.value); setReportResult(null) }}
+            <select value={effectiveMetric} onChange={(e) => { setReportMetric(e.target.value); setReportResult(null) }}
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
-              {['周转率', '修复率', '库存金额'].map((m) => <option key={m}>{m}</option>)}
+              {availableMetrics.map((m) => <option key={m}>{m}</option>)}
             </select>
             <button onClick={generateReport}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
@@ -272,7 +275,7 @@ export default function Analytics() {
               <thead>
                 <tr className="border-b border-slate-800">
                   <th className="text-left py-2 text-slate-400 font-medium">名称</th>
-                  <th className="text-right py-2 text-slate-400 font-medium">{reportMetric}</th>
+                  <th className="text-right py-2 text-slate-400 font-medium">{effectiveMetric}</th>
                 </tr>
               </thead>
               <tbody>
@@ -280,7 +283,7 @@ export default function Analytics() {
                   <tr key={row.name} className="border-b border-slate-800/50">
                     <td className="py-2 text-slate-300">{row.name}</td>
                     <td className="py-2 text-slate-300 text-right">
-                      {reportMetric === '库存金额' ? `¥${(row.value / 10000).toFixed(1)}万` : reportMetric === '修复率' ? `${row.value}%` : row.value}
+                      {effectiveMetric === '库存金额' ? `¥${(row.value / 10000).toFixed(1)}万` : effectiveMetric === '修复率' ? `${row.value}%` : effectiveMetric === '故障数量' ? `${row.value}件` : row.value}
                     </td>
                   </tr>
                 ))}
